@@ -1,0 +1,504 @@
+<!DOCTYPE html> 
+<html lang="en">
+   <head>
+        
+    <meta charset="UTF-8" />
+        
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        
+    <title>Dehradun Ecosystem Pressure</title>
+        
+    <!-- Tailwind CSS CDN for basic styling -->
+        
+    <script src="https://cdn.tailwindcss.com"></script>
+        
+    <style>
+               /* Custom styles for the body and canvas container */         body {             font-family: 'Inter', sans-serif;             margin: 0;             overflow: hidden; /* Prevent scrollbars */             position: relative; /* Needed for absolute positioning of canvas */             background-color: #e0f2f7; /* Light blue background for overall page */             color: #333;         }         canvas {             display: block;             /* Full-screen positioning for the canvas */             position: absolute;             top: 0;             left: 0;             width: 100vw; /* Full viewport width */             height: 100vh; /* Full viewport height */             border-radius: 0; /* No rounded corners for full-screen */             box-shadow: none; /* No shadow for full-screen */             background-color: transparent; /* Make canvas background transparent for 3D sky */         }         /* Removed .info-box styles as the element is no longer present */    
+    </style>
+     </head
+  > 
+  <body>
+        
+    <!-- The info-box div has been removed -->    
+    <canvas id="ecosystemCanvas"></canvas>     
+    <!-- Three.js CDN -->    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+        
+    <script>
+      // Ensure the script runs after the window has loaded
+      window.onload = function () {
+        // --- Scene Setup ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(
+          75,
+          window.innerWidth / window.innerHeight,
+          0.1,
+          1000
+        );
+        const renderer = new THREE.WebGLRenderer({
+          canvas: document.getElementById("ecosystemCanvas"),
+          antialias: true,
+        });
+        renderer.setPixelRatio(window.devicePixelRatio); // Improve rendering quality on high-DPI screens // Set initial camera position for an orbital view
+        let radius = 180; // Distance from the center of the scene
+        let theta = Math.PI * 0.6; // Azimuthal angle (around Y axis, for initial side view)
+        let phi = Math.PI * 0.4; // Polar angle (from Y axis, for initial elevated view) // Function to update camera position based on spherical coordinates
+        function updateCameraPosition() {
+          camera.position.x = radius * Math.sin(phi) * Math.sin(theta);
+          camera.position.y = radius * Math.cos(phi);
+          camera.position.z = radius * Math.sin(phi) * Math.cos(theta);
+          camera.lookAt(0, 0, 0); // Always look at the center of the scene
+        }
+        updateCameraPosition(); // Call once to set initial camera position // --- Responsiveness for Full-Screen ---
+        function onWindowResize() {
+          renderer.setSize(window.innerWidth, window.innerHeight); // Use window dimensions for full screen
+          camera.aspect = window.innerWidth / window.innerHeight;
+          camera.updateProjectionMatrix();
+        }
+
+        onWindowResize(); // Initial resize call
+        window.addEventListener("resize", onWindowResize); // Add event listener for window resize // --- Lighting ---
+        const hemisphereLight = new THREE.HemisphereLight(
+          0xe0ffff,
+          0x4b0082,
+          0.7
+        ); // Light Cyan for sky, dark purple for ground
+        scene.add(hemisphereLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(70, 120, 70);
+        scene.add(directionalLight); // --- Fog (for atmospheric perspective and haze/smog) ---
+
+        scene.fog = new THREE.Fog(0xddf0ff, 100, 350); // --- Sky Sphere (for realistic sky background) ---
+
+        const skyGeometry = new THREE.SphereGeometry(500, 32, 32);
+        const skyMaterial = new THREE.ShaderMaterial({
+          uniforms: {
+            topColor: { value: new THREE.Color(0x87ceeb) }, // Sky blue at top
+            bottomColor: { value: new THREE.Color(0xb0e0e6) }, // Lighter blue at bottom
+            offset: { value: 33 },
+            exponent: { value: 0.6 },
+          },
+          vertexShader: `                     varying vec3 vWorldPosition;                     void main() {                         vec4 worldPosition = modelMatrix * vec4( position, 1.0 );                         vWorldPosition = worldPosition.xyz;                         gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );                     }                 `,
+          fragmentShader: `                     uniform vec3 topColor;                     uniform vec3 bottomColor;                     uniform float offset;                     uniform float exponent;                     varying vec3 vWorldPosition;                      void main() {                         float h = normalize( vWorldPosition + offset ).y;                         gl_FragColor = vec4( mix( bottomColor, topColor, max( pow( max( 0.0, h ), exponent ), 0.0 ) ), 1.0 );                     }                 `,
+          side: THREE.BackSide, // Render inside of the sphere
+        });
+        const sky = new THREE.Mesh(skyGeometry, skyMaterial);
+        scene.add(sky); // --- Ground Plane (Nature to Urban Transition with Terrain) ---
+
+        const groundWidth = 300;
+        const groundDepth = 200;
+        const groundSegmentsX = 50;
+        const groundSegmentsZ = 50;
+        const groundGeometry = new THREE.PlaneGeometry(
+          groundWidth,
+          groundDepth,
+          groundSegmentsX,
+          groundSegmentsZ
+        );
+
+        const vertexOffset = 0.5;
+        for (
+          let i = 0;
+          i < groundGeometry.attributes.position.array.length;
+          i += 3
+        ) {
+          const x = groundGeometry.attributes.position.array[i];
+          const z = groundGeometry.attributes.position.array[i + 2];
+
+          if (x < -10) {
+            const height =
+              Math.sin(x * 0.1) * Math.cos(z * 0.05) * vertexOffset * 5;
+            groundGeometry.attributes.position.array[i + 1] = height;
+          }
+        }
+        groundGeometry.computeVertexNormals();
+
+        const groundMaterial = new THREE.ShaderMaterial({
+          uniforms: {
+            colorNature: { value: new THREE.Color(0x388e3c) },
+            colorUrban: { value: new THREE.Color(0x546e7a) },
+          },
+          vertexShader: `                     varying vec2 vUv;                     void main() {                         vUv = uv;                         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);                     }                 `,
+          fragmentShader: `                     uniform vec3 colorNature;                     uniform vec3 colorUrban;                     varying vec2 vUv;                      void main() {                         float xNormalized = (vUv.x - 0.5) * 2.0;                         float mixFactor = smoothstep(-0.4, 0.4, xNormalized);                         gl_FragColor = vec4(mix(colorNature, colorUrban, mixFactor), 1.0);                     }                 `,
+          side: THREE.DoubleSide,
+        });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.z = -20;
+        scene.add(ground); // --- River (Clean to Polluted) ---
+
+        const riverPath = new THREE.CurvePath();
+        riverPath.add(
+          new THREE.CubicBezierCurve3(
+            new THREE.Vector3(-100, 0.15, 50),
+            new THREE.Vector3(-50, 0.15, 0),
+            new THREE.Vector3(50, 0.15, -50),
+            new THREE.Vector3(100, 0.15, -100)
+          )
+        );
+
+        const riverGeometry = new THREE.TubeGeometry(
+          riverPath,
+          40,
+          6,
+          8,
+          false
+        );
+        const riverMaterial = new THREE.ShaderMaterial({
+          uniforms: {
+            cleanColor: { value: new THREE.Color(0x4fc3f7) },
+            pollutedColor: { value: new THREE.Color(0x6d4c41) },
+            pollutionStart: { value: 0.45 },
+          },
+          vertexShader: `                     varying float vNormalizedX;                     void main() {                         vNormalizedX = (position.x + 100.0) / 200.0;                         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);                     }                 `,
+          fragmentShader: `                     uniform vec3 cleanColor;                     uniform vec3 pollutedColor;                     uniform float pollutionStart;                     varying float vNormalizedX;                      void main() {                         float mixFactor = smoothstep(pollutionStart - 0.15, pollutionStart + 0.15, vNormalizedX);                         gl_FragColor = vec4(mix(cleanColor, pollutedColor, mixFactor), 1.0);                     }                 `,
+        });
+        const river = new THREE.Mesh(riverGeometry, riverMaterial);
+        scene.add(river); // --- Bridge over the polluted river ---
+
+        function createBridge(x, z) {
+          const bridgeGroup = new THREE.Group();
+          const deckHeight = 5;
+          const deckWidth = 15;
+          const deckDepth = 8;
+          const deckGeometry = new THREE.BoxGeometry(
+            deckWidth,
+            deckHeight,
+            deckDepth
+          );
+          const deckMaterial = new THREE.MeshStandardMaterial({
+            color: 0xa9a9a9,
+            roughness: 0.7,
+          });
+          const deck = new THREE.Mesh(deckGeometry, deckMaterial);
+          deck.position.set(x, deckHeight / 2 + 1, z);
+
+          const supportHeight = deckHeight + 2;
+          const supportGeometry = new THREE.BoxGeometry(
+            2,
+            supportHeight,
+            deckDepth
+          );
+          const supportMaterial = new THREE.MeshStandardMaterial({
+            color: 0x808080,
+            roughness: 0.8,
+          });
+
+          const support1 = new THREE.Mesh(supportGeometry, supportMaterial);
+          support1.position.set(x - deckWidth / 2 + 1, supportHeight / 2, z);
+          const support2 = new THREE.Mesh(supportGeometry, supportMaterial);
+          support2.position.set(x + deckWidth / 2 - 1, supportHeight / 2, z);
+
+          bridgeGroup.add(deck);
+          bridgeGroup.add(support1);
+          bridgeGroup.add(support2);
+          scene.add(bridgeGroup);
+        }
+        createBridge(40, -30); // --- Deodar Trees ---
+
+        function createDeodarTree(x, z) {
+          const treeGroup = new THREE.Group();
+
+          const trunkHeight = THREE.MathUtils.randFloat(18, 30);
+          const trunkRadiusTop = THREE.MathUtils.randFloat(0.5, 0.8);
+          const trunkRadiusBottom = THREE.MathUtils.randFloat(1, 1.5);
+          const trunkGeometry = new THREE.CylinderGeometry(
+            trunkRadiusTop,
+            trunkRadiusBottom,
+            trunkHeight,
+            8
+          );
+          const trunkMaterial = new THREE.MeshStandardMaterial({
+            color: 0x6b4226,
+            roughness: 0.8,
+          });
+          const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+          trunk.position.set(x, trunkHeight / 2, z);
+          treeGroup.add(trunk);
+
+          const leavesMaterial = new THREE.MeshStandardMaterial({
+            color: 0x0a6b35,
+            roughness: 0.6,
+          });
+          const numCones = THREE.MathUtils.randInt(4, 6);
+          let currentHeight = trunkHeight * 0.6;
+          for (let i = 0; i < numCones; i++) {
+            const coneRadius = THREE.MathUtils.randFloat(3, 6) * (1 - i * 0.1);
+            const coneHeight = THREE.MathUtils.randFloat(7, 12);
+            const leavesGeometry = new THREE.ConeGeometry(
+              coneRadius,
+              coneHeight,
+              8
+            );
+            const leaves = new THREE.Mesh(leavesGeometry, leavesMaterial);
+            leaves.position.set(x, currentHeight + coneHeight * 0.5, z);
+            treeGroup.add(leaves);
+            currentHeight += coneHeight * 0.5;
+          }
+          scene.add(treeGroup);
+        }
+
+        for (let i = 0; i < 60; i++) {
+          const x = THREE.MathUtils.randFloatSpread(150) - 75;
+          const z = THREE.MathUtils.randFloatSpread(150) - 75;
+          if (x < -10) {
+            createDeodarTree(x, z);
+          }
+        } // --- Buildings (on the urban side with varied styles) ---
+
+        function createBuilding(x, z, width, depth, height, type = "modern") {
+          const buildingGroup = new THREE.Group();
+
+          let bodyMaterial;
+          if (type === "modern") {
+            bodyMaterial = new THREE.MeshStandardMaterial({
+              color: new THREE.Color(0x78909c).multiplyScalar(
+                THREE.MathUtils.randFloat(0.8, 1.2)
+              ),
+              roughness: 0.7,
+              metalness: 0.1,
+            });
+          } else {
+            bodyMaterial = new THREE.MeshStandardMaterial({
+              color: new THREE.Color(0xd2b48c).multiplyScalar(
+                THREE.MathUtils.randFloat(0.8, 1.2)
+              ),
+              roughness: 0.9,
+              metalness: 0,
+            });
+          }
+
+          const bodyGeometry = new THREE.BoxGeometry(width, height, depth);
+          const buildingBody = new THREE.Mesh(bodyGeometry, bodyMaterial);
+          buildingBody.position.set(x, height / 2, z);
+          buildingGroup.add(buildingBody);
+
+          const windowMaterial = new THREE.MeshStandardMaterial({
+            color: 0x87ceeb,
+            emissive: 0x2a52be,
+            emissiveIntensity: 0.2,
+            roughness: 0.3,
+          });
+          const windowSize = Math.min(width, depth) * 0.15;
+          const windowSpacing = windowSize * 1.5;
+
+          for (
+            let h = windowSize * 2;
+            h < height - windowSize;
+            h += windowSpacing
+          ) {
+            for (
+              let w = -width / 2 + windowSpacing;
+              w < width / 2 - windowSize;
+              w += windowSpacing
+            ) {
+              const windowGeo = new THREE.BoxGeometry(
+                windowSize,
+                windowSize,
+                0.1
+              );
+              const windowMesh = new THREE.Mesh(windowGeo, windowMaterial);
+              windowMesh.position.set(x + w, h, z + depth / 2 + 0.05);
+              buildingGroup.add(windowMesh);
+            }
+          }
+          scene.add(buildingGroup);
+        }
+
+        for (let i = 0; i < 40; i++) {
+          const x = THREE.MathUtils.randFloatSpread(150) + 75;
+          const z = THREE.MathUtils.randFloatSpread(150) - 75;
+          const height = THREE.MathUtils.randFloat(20, 70);
+          const width = THREE.MathUtils.randFloat(10, 25);
+          const depth = THREE.MathUtils.randFloat(10, 25);
+          if (x > 10) {
+            const buildingType = Math.random() > 0.6 ? "traditional" : "modern";
+            createBuilding(x, z, width, depth, height, buildingType);
+          }
+        } // --- Roads ---
+
+        function createRoad(startX, startZ, endX, endZ, width) {
+          const length = Math.sqrt(
+            Math.pow(endX - startX, 2) + Math.pow(endZ - startZ, 2)
+          );
+          const roadGeometry = new THREE.PlaneGeometry(width, length);
+          const roadMaterial = new THREE.MeshStandardMaterial({
+            color: 0x34495e,
+            roughness: 0.9,
+          });
+          const road = new THREE.Mesh(roadGeometry, roadMaterial);
+
+          road.rotation.x = -Math.PI / 2;
+          road.position.set((startX + endX) / 2, 0.2, (startZ + endZ) / 2);
+          road.rotation.z = Math.atan2(endX - startX, endZ - startZ);
+          scene.add(road);
+        }
+
+        createRoad(20, -50, 100, -60, 10);
+        createRoad(60, -80, 60, 0, 8);
+        createRoad(30, -20, 80, -20, 6); // --- Mountains in the background (Enhanced) ---
+
+        function createMountain(x, z, baseScale) {
+          const mountainGroup = new THREE.Group(); // Custom shader material for mountains with snow caps
+
+          const mountainMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+              rockColor: { value: new THREE.Color(0x778899) }, // Base rock color
+              snowColor: { value: new THREE.Color(0xffffff) }, // Snow white
+              snowlineHeight: { value: 80.0 * baseScale }, // Height where snow starts
+              peakHeight: { value: 150.0 * baseScale }, // Max height of the mountain (for normalization)
+            },
+            vertexShader: `                         varying float vHeight;                         void main() {                             vHeight = position.y; // Pass vertex height to fragment shader                             gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);                         }                     `,
+            fragmentShader: `                         uniform vec3 rockColor;                         uniform vec3 snowColor;                         uniform float snowlineHeight;                         uniform float peakHeight;                         varying float vHeight;                          void main() {                             // Calculate mix factor based on height relative to snowline                             // Smoothstep creates a soft transition                             float mixFactor = smoothstep(snowlineHeight, peakHeight, vHeight);                             gl_FragColor = vec4(mix(rockColor, snowColor, mixFactor), 1.0);                         }                     `, // Using MeshStandardMaterial properties for lighting interactions
+            lights: true, // Essential for standard material lighting
+          });
+
+          const numPeaks = THREE.MathUtils.randInt(2, 5); // More peaks for complexity
+          for (let i = 0; i < numPeaks; i++) {
+            const peakScale = baseScale * THREE.MathUtils.randFloat(0.7, 1.3);
+            const peakHeight = 150 * peakScale;
+            const peakRadius = 50 * peakScale; // Using TetrahedronGeometry for sharper, more jagged peaks
+
+            const peakGeometry = new THREE.TetrahedronGeometry(peakRadius, 0); // Radius, detail (0 for simple)
+            const peak = new THREE.Mesh(peakGeometry, mountainMaterial); // Random position within the mountain group to create a cluster
+
+            peak.position.set(
+              THREE.MathUtils.randFloatSpread(peakRadius * 0.8), // Spread X
+              peakHeight / 2 +
+                THREE.MathUtils.randFloatSpread(peakHeight * 0.2), // Vary peak height
+              THREE.MathUtils.randFloatSpread(peakRadius * 0.8) // Spread Z
+            ); // Random rotation for varied look
+            peak.rotation.set(
+              Math.random() * Math.PI,
+              Math.random() * Math.PI,
+              Math.random() * Math.PI
+            );
+            mountainGroup.add(peak);
+          } // Position the entire mountain group
+
+          mountainGroup.position.set(x, (150 * baseScale) / 2 - 10, z); // Adjust base to sit on ground
+          scene.add(mountainGroup);
+        } // Add mountains further back on the green side
+
+        for (let i = 0; i < 15; i++) {
+          const x = THREE.MathUtils.randFloatSpread(300) - 150;
+          const z = THREE.MathUtils.randFloat(-250, -150);
+          const scale = THREE.MathUtils.randFloat(1.0, 2.5);
+          createMountain(x, z, scale);
+        } // --- Waste Elements (scattered in polluted area) ---
+
+        function createWaste(x, z) {
+          const geometry = new THREE.BoxGeometry(
+            THREE.MathUtils.randFloat(0.5, 2),
+            THREE.MathUtils.randFloat(0.2, 1),
+            THREE.MathUtils.randFloat(0.5, 2)
+          );
+          const material = new THREE.MeshStandardMaterial({
+            color: new THREE.Color(0x4a2c2a).multiplyScalar(
+              THREE.MathUtils.randFloat(0.8, 1.2)
+            ),
+            roughness: 0.9,
+          });
+          const waste = new THREE.Mesh(geometry, material);
+          waste.position.set(x, geometry.parameters.height / 2, z);
+          waste.rotation.y = Math.random() * Math.PI;
+          scene.add(waste);
+        }
+
+        for (let i = 0; i < 100; i++) {
+          const x = THREE.MathUtils.randFloatSpread(150) + 20;
+          const z = THREE.MathUtils.randFloatSpread(150) - 75;
+          if (x > 0) {
+            createWaste(x, z);
+          }
+        } // --- Smog Layer (over the urban area) ---
+
+        const smogGeometry = new THREE.PlaneGeometry(150, 150);
+        const smogMaterial = new THREE.MeshBasicMaterial({
+          color: 0x808080,
+          transparent: true,
+          opacity: 0.2,
+          side: THREE.DoubleSide,
+        });
+        const smog = new THREE.Mesh(smogGeometry, smogMaterial);
+        smog.rotation.x = -Math.PI / 2;
+        smog.position.set(75, 5, -20);
+        scene.add(smog); // --- User Interaction (Camera Orbit Control) ---
+
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        const rotationSpeed = 0.005; // Get canvas element to attach event listeners
+
+        const interactiveCanvas = document.getElementById("ecosystemCanvas");
+
+        interactiveCanvas.addEventListener("mousedown", function (e) {
+          isDragging = true;
+          previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+
+        interactiveCanvas.addEventListener("mousemove", function (e) {
+          if (!isDragging) return;
+
+          const deltaX = e.clientX - previousMousePosition.x;
+          const deltaY = e.clientY - previousMousePosition.y;
+
+          theta -= deltaX * rotationSpeed;
+          phi -= deltaY * rotationSpeed;
+
+          phi = Math.max(0.1, Math.min(Math.PI - 0.1, phi));
+
+          updateCameraPosition();
+          previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+
+        interactiveCanvas.addEventListener("mouseup", function () {
+          isDragging = false;
+        });
+
+        interactiveCanvas.addEventListener("touchstart", function (e) {
+          if (e.touches.length === 1) {
+            isDragging = true;
+            previousMousePosition = {
+              x: e.touches[0].clientX,
+              y: e.touches[0].clientY,
+            };
+          }
+        });
+
+        interactiveCanvas.addEventListener("touchmove", function (e) {
+          if (!isDragging || e.touches.length !== 1) return;
+          e.preventDefault();
+
+          const deltaX = e.touches[0].clientX - previousMousePosition.x;
+          const deltaY = e.touches[0].clientY - previousMousePosition.y;
+
+          theta -= deltaX * rotationSpeed;
+          phi -= deltaY * rotationSpeed;
+
+          phi = Math.max(0.1, Math.min(Math.PI - 0.1, phi));
+
+          updateCameraPosition();
+          previousMousePosition = {
+            x: e.touches[0].clientX,
+            y: e.touches[0].clientY,
+          };
+        });
+
+        interactiveCanvas.addEventListener("touchend", function () {
+          isDragging = false;
+        }); // --- Animation Loop ---
+
+        function animate() {
+          requestAnimationFrame(animate);
+          renderer.render(scene, camera);
+        }
+
+        animate(); // Start the animation loop
+      };
+    </script>
+     
+  </body>
+   
+</html>
+ 
